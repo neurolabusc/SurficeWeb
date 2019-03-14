@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Surfice WebGL</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        html,
+        body {
+            padding: 0;
+            margin: 0;
+            height: 100%;
+            width: 100%;
+            background: #000000;
+        }
+
+        ul {
+            list-style-type: none;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #333;
+        }
+
+        li {
+            float: left;
+        }
+
+        li a,
+        .dropbtn {
+            /* menu header */
+            display: inline-block;
+            color: white;
+            text-align: center;
+            padding: 14px 16px;
+            text-decoration: none;
+        }
+
+        li a:hover,
+        .dropdown:hover .dropbtn {
+            background-color: #44ABDA;
+        }
+
+        li.dropdown {
+            display: inline-block;
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        .dropdown-content {
+            font-family: Arial, Helvetica, sans-serif;
+            display: none;
+            position: absolute;
+            background-color: #f9f9f9;
+            min-width: 160px;
+            box-shadow: 0px 8px 16px 0px rgba(0, 0, 0, 0.2);
+            z-index: 1;
+        }
+
+        .dropdown-content a {
+            /* menu items */
+            color: black;
+            padding: 12px 16px;
+            text-decoration: none;
+            display: block;
+            text-align: left;
+        }
+
+        .dropdown-content a:hover {
+            background-color: #f1f1f1
+        }
+
+        .dropdown:hover .dropdown-content {
+            display: block;
+        }
+
+        .divider,
+        .overlay {
+            border-top: 1px solid grey;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="menu-container">
+        <input id="file-input" type="file" name="name" style="display: none;" />
+        <ul>
+            <li class="dropdown">
+                <a href="javascript:void(0)" class="dropbtn" id="FileMenu">File</a>
+                <div class="dropdown-content">
+                    <a class="viewBtn" id="Open">Open</a>
+                    <a class="viewBtn" id="OpenOverlay">Open Overlay</a>
+                    <a class="viewBtn" id="SaveBitmap">Save Bitmap</a>
+                    <a class="divider" id="About">About</a>
+                </div>
+            </li>
+            <li class="dropdown">
+                <a href="javascript:void(0)" class="dropbtn" id="ViewMenu">View</a>
+                <div class="dropdown-content">
+                    <a class="viewBtn" id="L">Left</a>
+                    <a class="viewBtn" id="R">Right</a>
+                    <a class="viewBtn" id="P">Posterior</a>
+                    <a class="viewBtn" id="A">Anterior</a>
+                    <a class="viewBtn" id="I">Inferior</a>
+                    <a class="viewBtn" id="S">Superior</a>
+                </div>
+            </li>
+            <li class="dropdown">
+                <a href="javascript:void(0)" class="dropbtn">Examples</a>
+                <div class="dropdown-content">
+                    <a class="viewBtn" id="_colorbrain.mz3">fMRI</a>
+                    <a class="viewBtn" id="_aal.mz3">Template</a>
+                    <a class="viewBtn" id="_Right.mz3">Right</a>
+                    <a class="viewBtn" id="_Right_Smooth.mz3">Right Smooth</a>
+                    <a class="viewBtn" id="_Left.mz3">Left</a>
+                    <a class="viewBtn" id="_Left_Smooth.mz3">Left Smooth</a>
+                    <a class="viewBtn" id="_Cortex.mz3">Cortex</a>
+                    <a class="divider" id="^overlay.mz3">Add Overlay</a>
+                </div>
+            </li>
+        </ul>
+    </div>
+    <div id="three-container">
+        <script src="three.min.js"></script>
+        <script src="gunzip.min.js"></script>
+        <script src="dat.gui.min.js"></script>
+        <script src="OrbitControls.js"></script>
+        <script src="MZ3Loader.js"></script>
+        <script>
+            var container = window.document.getElementById('three-container');
+            //file open dialogs
+            var openDialog = document.createElement('input');
+            openDialog.type = 'file';
+            openDialog.onchange = e => {
+                loadGeometry(e.target.files[0], false);
+            }
+            var openOverlayDialog = document.createElement('input');
+            openOverlayDialog.type = 'file';
+            openOverlayDialog.onchange = e => {
+                    loadGeometry(e.target.files[0], false, true);
+            }
+            //use pre-baked AO texture: 1x256 B/W gradient
+            // https://rawgit.com/looeee/three.js/per_vertex_ao/examples/webgl_per_vertex_ao.html
+            var aoMap = new THREE.TextureLoader().load('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAABCAYAAAAxWXB3AAAAIElEQVQ4T2NkYGD4z8TExAACo/RoOIymg5GTDxgZGRkA/oMD/vOwS0YAAAAASUVORK5CYII=');
+            var parameters = {
+                axesHelper: false,
+                backColor: "#FFFFFF",
+                ambientIntensity: 0.8,
+                meshColor: "#ffc7d0",
+                opacity: 1,
+                aoMapIntensity: 1.0,
+                roughness: 0.5,
+                metalness: 0.25,
+                wireframe: false,
+                oColor: "#FF0000",
+                oopacity: 1,
+                oroughness: 0.5,
+                ometalness: 0.25,
+                owireframe: false
+            };
+            var busy = false;
+            var folder;
+            var axesHelper;
+            var menuHeight = 6 + document.getElementById('menu-container').clientHeight;
+            var isPerspective = true;
+            var maxDistance = 100.0;
+            var  minDistance = 1.5;
+            var defaultDistance = 5.0;
+            var ambientLight = new THREE.AmbientLight(0xffffff, parameters.ambientIntensity);
+            var light = new THREE.PointLight(0xffffff, 1.0 - parameters.ambientIntensity, 100);
+            var camera, scene, renderer;
+            var ofolder, aofolder;
+            var scaleZoom = 1;
+            var mesh = null;
+            var overlay = null;
+            init();
+
+            function initCamera() {
+                if (isPerspective)
+                    camera = new THREE.PerspectiveCamera(10, window.innerWidth / window.innerHeight, 0.01, maxDistance);
+                else {
+                    var w = window.innerWidth;
+                    var h = window.innerHeight;
+                    camera = new THREE.OrthographicCamera(w / -2, w / 2, h / 2, h / -2, 1, 1000);
+                }
+                camera.position.z = defaultDistance;
+                camera.zoom = 1.0;
+                camera.add(light);
+                scene.add(ambientLight);
+                scene.add(camera);
+            }
+
+            function init() {
+                //document.body.appendChild( container );
+                setupDragDrop();
+                scene = new THREE.Scene();
+                scene.background = new THREE.Color(0xaaaaaa);
+                scene.background.setHex(parameters.backColor.replace("#", "0x"));
+                //var ambient = new THREE.AmbientLight( 0x101030 );
+                //scene.add( ambient );
+                light.position.set(0, defaultDistance * 0.5, 0); //from above: normal lighting
+                light.decay = 0;
+                initCamera();
+                renderer = new THREE.WebGLRenderer({
+                    antialias: true
+                });
+                //renderer.setPixelRatio( 1 );//<- low DPI
+                renderer.setPixelRatio(window.devicePixelRatio); // <- high DPI
+                container.appendChild(renderer.domElement);
+                renderer.localClippingEnabled = true;
+                controls = new THREE.OrbitControls(camera, renderer.domElement);
+                controls.minDistance = minDistance; //Closest we can get to the Sun a
+                controls.maxDistance = maxDistance; //Let you figure this one out...
+                //Menu events
+                controls.addEventListener('change', render);
+                var buttons = document.getElementsByClassName("viewBtn");
+                for (let i = 0; i < buttons.length; i++)
+                    buttons[i].addEventListener("click", onButtonClick, false);
+                buttons = document.getElementsByClassName("divider");
+                for (let i = 0; i < buttons.length; i++)
+                    buttons[i].addEventListener("click", onButtonClick, false);
+                // GUI
+                var gui = new dat.GUI();
+                var folderG = gui.addFolder('Scene');
+                folderG.add(parameters, 'axesHelper').name('Axes Helper').onFinishChange(function() {
+                    materialChange();
+                });
+                folderG.addColor(parameters, 'backColor').name('Back Color').onChange(function() {
+                    materialChange();
+                });
+                folderG.open();
+                aofolder = gui.addFolder('Occlusion');
+                aofolder.add(parameters, 'ambientIntensity').min(0).max(1).step(0.01).name('Amount').onChange(function() {
+                    materialChange();
+                });
+                folder = gui.addFolder('Background Mesh');
+                folder.addColor(parameters, 'meshColor').name('Color').onChange(function() {
+                    materialChange();
+                });
+                folder.add(parameters, 'opacity').min(0).max(1).step(0.01).name('Opacity').onChange(function() {
+                    materialChange();
+                });
+                folder.add(parameters, 'roughness').min(0).max(1).step(0.01).name('Roughness').onChange(function() {
+                    materialChange();
+                });
+                folder.add(parameters, 'metalness').min(0).max(1).step(0.01).name('Metalness').onChange(function() {
+                    materialChange();
+                });
+                folder.add(parameters, 'wireframe').name('Wire Frame').onFinishChange(function() {
+                    materialChange();
+                });
+                folder.open();
+                ofolder = gui.addFolder('Overlay Mesh');
+                ofolder.addColor(parameters, 'oColor').name('Color').onChange(function() {
+                    materialChange();
+                });
+                //ofolder.add( parameters, 'oopacity' ).min(0).max(1).step(0.01).name('Opacity').onChange(function(){ materialChange();});
+                ofolder.add(parameters, 'oroughness').min(0).max(1).step(0.01).name('Roughness').onChange(function() {
+                    materialChange();
+                });
+                ofolder.add(parameters, 'ometalness').min(0).max(1).step(0.01).name('Metalness').onChange(function() {
+                    materialChange();
+                });
+                ofolder.add(parameters, 'owireframe').name('Wire Frame').onFinishChange(function() {
+                    materialChange();
+                });
+                ofolder.close();
+                gui.open();
+                //load startup mesh
+                loadGeometry('Right.mz3', true, false, 'overlay.mz3');
+                window.addEventListener('resize', onWindowResize, false);
+                onWindowResize();
+            }
+
+
+    		function loadGeometry(url, isURL = true, isOverlay = false, urlOverlay = '') {
+                var fnm = url;
+                if (!isURL) {
+                    fnm = url.name;
+                }
+                if (busy) { //promises should reduce this issue
+                    console.log('Too busy to load ' + fnm);
+                    return false;
+                }
+                busy = true;
+                console.log('Loading "'+fnm+'"');
+                //next lines to detect format
+                var extension = fnm.split('.').pop().toLowerCase();
+                var isMz3 = (extension === 'mz3');
+                if (!isMz3) {
+                    alert("Images should be in mz3 format");
+                    console.log('Only MZ3 format supported');
+                }
+                var loader = new THREE.MZ3Loader();
+                if (isURL) {
+                    loader.load(url,  function(geometry) {
+                		//console.log('Loaded '+fnm);
+                        loadGeometryCore(geometry, isOverlay);
+                        //console.log('Geo Loaded '+fnm);
+                        busy = false;
+                        if (urlOverlay !== "")
+                        	loadGeometry(urlOverlay, true, true);
+
+                    }, onProgress, onError);
+                } else {
+                    var reader = new FileReader();
+                    reader.readAsArrayBuffer(url);
+                    reader.addEventListener('load', function(event) {
+                        var object = loader.parse(event.target.result);
+                        loadGeometryCore(object, isOverlay);
+                        busy = false;
+                    });
+                }
+                return true;
+
+                var onProgress = function(xhr) {
+                    if (xhr.lengthComputable) {
+                        //var percentComplete = xhr.loaded / xhr.total * 100;
+                        //console.log( Math.round( percentComplete, 2 ) + '% downloaded' );
+                        if (xhr.loaded === xhr.total) {
+                            console.log('File size: ' + (xhr.total / 1024).toFixed(2) + 'kB');
+                        }
+                    }
+                }; //onProgress
+
+                var onError = function() {
+                    //busy = false;
+                }; //onError
+
+                function loadGeometryCore(geometry, isOverlay = false) {
+                    if (overlay !== null) {
+                        scene.remove(overlay);
+                        overlay.geometry.dispose();
+                        overlay = null;
+                        ofolder.close();
+                    }
+                    if (isOverlay) {
+                        loadGeometryOverlay(geometry);
+                        return;
+                    }
+                    if (mesh !== null) {
+                        scene.remove(mesh);
+                        mesh.geometry.dispose();
+                    }
+                    var mat = new THREE.MeshStandardMaterial({
+                        aoMapIntensity: parameters.aoMapIntensity,
+                        side: THREE.DoubleSide
+                    });
+                    if (typeof geometry.attributes.uv2 !== 'undefined') {
+                        mat.aoMap = aoMap;
+                        aofolder.open();
+                    } else {
+                        aofolder.close();
+                    }
+                    if (typeof geometry.attributes.color !== 'undefined') {
+                        mat.vertexColors = THREE.VertexColors;
+                    }
+                    mat.transparent = true;
+                    mesh = new THREE.Mesh(geometry, mat);
+                    mesh.geometry.colorsNeedUpdate = true;
+                    var sz = new THREE.Vector3();
+                    var box = new THREE.Box3().setFromObject(mesh);
+                    sz = box.getSize(sz);
+                    var maxSz = sz.length();
+                    scaleZoom = 1.0 / maxSz;
+                    mesh.scale.set(scaleZoom, scaleZoom, scaleZoom);
+                    //console.log( '# of vertices: ' + geometry.attributes.position.count );
+                    //console.log( '# of triangles: ' + ( geometry.index ? geometry.index.count / 3 : geometry.attributes.position.count / 3 ) );
+                    materialChange();
+                    mesh.renderOrder = 1;
+                    scene.add(mesh);
+                    //busy = false;
+                    cameraReset();
+                } //loadGeometryCore
+
+                function loadGeometryOverlay(geometry) {
+                    var mat = new THREE.MeshStandardMaterial({
+                        side: THREE.DoubleSide
+                    });
+                    if (typeof geometry.attributes.color !== 'undefined') {
+                        mat.vertexColors = THREE.VertexColors;
+                        parameters.oColor = "#FFFFFF";
+                    }
+                    mat.transparent = true;
+                    overlay = new THREE.Mesh(geometry, mat);
+                    overlay.geometry.colorsNeedUpdate = true;
+                    overlay.scale.set(scaleZoom, scaleZoom, scaleZoom);
+                    //console.log( '# of overlay vertices: ' + geometry.attributes.position.count );
+                    //console.log( '# of overlay triangles: ' + ( geometry.index ? geometry.index.count / 3 : geometry.attributes.position.count / 3 ) );
+                    materialChange();
+                    scene.add(overlay);
+                    //busy = false;
+                    cameraReset();
+                } //loadGeometryOverlay
+            } //loadGeometry()
+
+            function onWindowResize() {
+                var w = window.innerWidth;
+                var h = window.innerHeight - menuHeight;
+                //console.log(" w : " + w + " h : " + h + " menu : "+ menuHeight);
+                if (isPerspective)
+                    camera.aspect = w / h;
+                else {
+                    camera.left = w / -2;
+                    camera.right = w / 2;
+                    camera.top = h / 2;
+                    camera.bottom = h / -2;
+                }
+                camera.updateProjectionMatrix();
+                renderer.setSize(w, h);
+                cameraReset();
+            }
+
+            function materialChange() {
+                scene.background.setHex(parameters.backColor.replace("#", "0x"));
+                //ambientLight.color.setHex( parameters.backColor.replace("#", "0x") );
+                if (mesh.material.aoMap !== null) {
+                    mesh.material.aoMapIntensity = parameters.aoMapIntensity;
+                    ambientLight.intensity = parameters.ambientIntensity;
+                    light.intensity = 1.0 - parameters.ambientIntensity;
+                } else {
+                    ambientLight.intensity = 0.0;
+                    light.intensity = 1.0;
+                }
+                var color = new THREE.Color();
+                color.setHex(parameters.meshColor.replace("#", "0x"));
+                if (mesh.material.vertexColors === THREE.VertexColors) {
+                    color.r = (color.r + 1.0) / 2.0;
+                    color.g = (color.g + 1.0) / 2.0;
+                    color.b = (color.b + 1.0) / 2.0;
+                }
+                mesh.material.color = color;
+                mesh.material.metalness = parameters.metalness;
+                mesh.material.opacity = parameters.opacity;
+                mesh.material.roughness = parameters.roughness;
+                mesh.material.wireframe = parameters.wireframe;
+                if (overlay !== null) {
+                    var oColor = new THREE.Color();
+
+                    oColor.setHex(parameters.oColor.replace("#", "0x"));
+                    if (overlay.material.vertexColors === THREE.VertexColors) {
+                        oColor.r = (oColor.r + 1.0) / 2.0;
+                        oColor.g = (oColor.g + 1.0) / 2.0;
+                        oColor.b = (oColor.b + 1.0) / 2.0;
+                    }
+                    overlay.material.color = oColor;
+                    overlay.material.metalness = parameters.ometalness;
+                    //overlay.material.opacity = parameters.oopacity;
+                    overlay.material.roughness = parameters.oroughness;
+                    overlay.material.wireframe = parameters.owireframe;
+                    ofolder.open();
+                }
+
+                if (axesHelper !== null)
+                    scene.remove(axesHelper);
+                if (parameters.axesHelper > 0) {
+                    axesHelper = new THREE.AxesHelper(0.5 * parameters.axesHelper + 0.001);
+                    scene.add(axesHelper);
+                }
+                render();
+            }
+
+            function render() {
+                if (!isPerspective) {
+                    var dist = camera.position.distanceTo(scene.position);
+                    var mn = Math.min(window.innerHeight, window.innerWidth) * 1.0;
+                    camera.zoom = (dist / defaultDistance) * mn;
+                    camera.updateProjectionMatrix();
+                }
+                camera.lookAt(scene.position);
+                renderer.render(scene, camera);
+            }
+
+            function cameraReset() {
+                var dist = camera.position.distanceTo(scene.position);
+                controls.reset();
+                camera.position.set(dist, 0, 0);
+                camera.updateMatrix();
+                controls.update();
+            }
+
+            function onButtonClick(event) {
+                var el = this.parentNode;
+                el.style.display = "none";
+                setTimeout(function() { //close menu
+                    el.style.removeProperty("display");
+                }, 500);
+                //console.log(event.target.id);
+                if(event.target.id.charAt(0) === '_') { //load mesh
+ 					s = event.target.id.substr(1);
+					loadGeometry(s);
+					return;
+                }
+                if(event.target.id.charAt(0) === '^') { //load overlay
+ 					s = event.target.id.substr(1);
+					loadGeometry(s, true, true);
+					return;
+                }
+                if (event.target.id === "Open") {
+                    openDialog.click();
+                    return;
+                }
+                if (event.target.id === "OpenOverlay") {
+                    openOverlayDialog.click();
+                    //alert("Surfice by Chris Rorden");
+                    return;
+                }
+                if (event.target.id === "About") {
+                    alert("Surfice by Chris Rorden");
+                    /*code below saves mz3 mesh
+                    //console.log(mesh.geometry.attributes.position.array.length);
+                    //window.open( 'https://www.mccauslandcenter.sc.edu/crnl/', '_blank' )
+                    nvert = mesh.geometry.attributes.position.array.length / 3;
+                    hdrBytes = 16;
+                    var buffer = new ArrayBuffer(16+ (nvert * 4));
+                    var view = new DataView(buffer);
+                    view.setUint16(0, 23117, true); //magic - true: mz3 ALWAYS little endian!
+                    var attr = 8; //scalar!
+                    view.setUint16(2, attr, true);
+                    var nface = 0;
+                    view.setUint32(4, nface, true);
+                    view.setUint32(8, nvert, true);
+                    var nskip = 0;
+                    view.setUint32(12, nskip, true);
+                    var _buffer = buffer;
+                    var positions = new Float32Array(_buffer, 16,nvert, true);
+                    for ( var i = 0; i < nvert; i ++ )
+                    	positions[i] = i;
+                    saveByteArray([buffer], 'example.mz3');*/
+                    return;
+                }
+                if (event.target.id === "SaveBitmap") {
+                    var imgData;
+                    try {
+                        var strMime = "image/png";
+                        var strDownloadMime = "image/octet-stream";
+                        renderer.render(scene, camera);
+                        imgData = renderer.domElement.toDataURL(strMime);
+                        saveFile(imgData.replace(strMime, strDownloadMime), "surfice.png");
+                    } catch (e) {
+                        console.log(e);
+                    }
+                    return;
+                }
+                var dist = camera.position.distanceTo(scene.position);
+                controls.reset();
+                if (event.target.id === "L")
+                    camera.position.set(-dist, 0, 0);
+                else if (event.target.id === "R")
+                    camera.position.set(dist, 0, 0);
+                else if (event.target.id === "S")
+                    camera.position.set(0, dist, 0.001);
+                else if (event.target.id === "I") {
+                    camera.position.set(0, -dist, 0.00);
+                    //requires modification to OrbitControls.js https://stackoverflow.com/questions/50633960/three-js-orbitcontrols-how-update-rotation-camera
+                    controls.rotate(180 * Math.PI / 180);
+                } else if (event.target.id === "A")
+                    camera.position.set(0, 0, -dist);
+                else //P
+                    camera.position.set(0, 0, dist);
+                controls.update();
+            }
+
+            var saveFile = function(strData, filename) {
+                var link = document.createElement('a');
+                if (typeof link.download === 'string') {
+                    document.body.appendChild(link); //Firefox requires the link to be in the body
+                    link.download = filename;
+                    link.href = strData;
+                    link.click();
+                    document.body.removeChild(link); //remove the link when done
+                } else {
+                    location.replace(uri);
+                }
+            }
+
+            function setupDragDrop() {
+                var holder = document.getElementById('three-container');
+                // check if filereader is available
+                if (typeof window.FileReader === 'undefined') {
+                    console.error("Filereader not supported");
+                }
+                holder.ondragover = function() {
+                    this.className = 'hover';
+                    return false;
+                };
+                holder.ondragend = function() {
+                    this.className = '';
+                    return false;
+                };
+                holder.ondrop = function(e) {
+                    this.className = '';
+                    e.preventDefault();
+                    loadGeometry(e.dataTransfer.files[0], false);
+                    return false;
+                }
+            } //setupDragDrop()
+        </script>
+    </div>
+</body>
+
+</html>
