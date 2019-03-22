@@ -3,6 +3,7 @@
 
 <head>
     <title>Surfice WebGL</title>
+    <link rel="shortcut icon" href="data:image/x-icon;," type="image/x-icon">
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
     <style>
@@ -121,12 +122,14 @@
         </ul>
     </div>
     <div id="three-container">
+    	<script src="config.js" ></script>
         <script src="three.min.js"></script>
         <script src="gunzip.min.js"></script>
         <script src="dat.gui.min.js"></script>
         <script src="OrbitControls.js"></script>
         <script src="MZ3Loader.js"></script>
         <script>
+        	//console.log(config)
             var container = window.document.getElementById('three-container');
             //file open dialogs
             var openDialog = document.createElement('input');
@@ -142,22 +145,6 @@
             //use pre-baked AO texture: 1x256 B/W gradient
             // https://rawgit.com/looeee/three.js/per_vertex_ao/examples/webgl_per_vertex_ao.html
             var aoMap = new THREE.TextureLoader().load('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAABCAYAAAAxWXB3AAAAIElEQVQ4T2NkYGD4z8TExAACo/RoOIymg5GTDxgZGRkA/oMD/vOwS0YAAAAASUVORK5CYII=');
-            var parameters = {
-                axesHelper: false,
-                backColor: "#FFFFFF",
-                ambientIntensity: 0.8,
-                meshColor: "#ffc7d0",
-                opacity: 1,
-                aoMapIntensity: 1.0,
-                roughness: 0.5,
-                metalness: 0.25,
-                wireframe: false,
-                oColor: "#FF0000",
-                oopacity: 1,
-                oroughness: 0.5,
-                ometalness: 0.25,
-                owireframe: false
-            };
             var busy = false;
             var folder;
             var axesHelper;
@@ -267,7 +254,7 @@
                 ofolder.close();
                 gui.open();
                 //load startup mesh
-                loadGeometry('Right.mz3', true, false, 'overlay.mz3');
+                loadGeometry(parameters.mesh, true, false, parameters.overlay);
                 window.addEventListener('resize', onWindowResize, false);
                 onWindowResize();
             }
@@ -343,9 +330,9 @@
                         mesh.geometry.dispose();
                     }
                     var mat = new THREE.MeshStandardMaterial({
-                        aoMapIntensity: parameters.aoMapIntensity,
-                        side: THREE.DoubleSide
-                    });
+                        aoMapIntensity: parameters.aoMapIntensity
+                    }); //side: THREE.DoubleSide
+
                     if (typeof geometry.attributes.uv2 !== 'undefined') {
                         mat.aoMap = aoMap;
                         aofolder.open();
@@ -364,13 +351,21 @@
                     var maxSz = sz.length();
                     scaleZoom = 1.0 / maxSz;
                     mesh.scale.set(scaleZoom, scaleZoom, scaleZoom);
-                    //console.log( '# of vertices: ' + geometry.attributes.position.count );
-                    //console.log( '# of triangles: ' + ( geometry.index ? geometry.index.count / 3 : geometry.attributes.position.count / 3 ) );
-                    materialChange();
                     mesh.renderOrder = 1;
                     scene.add(mesh);
+					/* //https://github.com/mrdoob/three.js/issues/2476
+                    var mat2 = new THREE.MeshStandardMaterial({
+                        aoMapIntensity: parameters.aoMapIntensity,
+                    }); //side: THREE.DoubleSide
+ 					mat2.transparent = true;
+                    mat2.side = THREE.BackSide;
+                    mesh = new THREE.Mesh(geometry, mat2);
+					mesh.scale.set(scaleZoom, scaleZoom, scaleZoom);
+                    mesh.renderOrder = 1;
+                    scene.add(mesh);*/
                     //busy = false;
-                    cameraReset();
+                    materialChange();
+                   cameraReset();
                 } //loadGeometryCore
 
                 function loadGeometryOverlay(geometry) {
@@ -474,10 +469,21 @@
             function cameraReset() {
                 var dist = camera.position.distanceTo(scene.position);
                 controls.reset();
-                camera.position.set(dist, 0, 0);
+				var Theta = (parameters.azimuth-90) * Math.PI / 180;
+				var Phi = parameters.elevation;
+				Phi = Math.min(Phi, 90);
+				Phi = Math.max(Phi, -90);
+				var Phi = Phi * Math.PI / 180;//degrees->radians
+				var x = Math.cos(Phi)*Math.cos(Theta);
+				var y = Math.cos(Phi)*Math.sin(Theta);
+				var z = Math.sin(Phi);
+				//console.log('%g %g %g', x, y, z);
+                camera.position.set(dist*x, dist*z, dist*y);
                 camera.updateMatrix();
                 controls.update();
             }
+
+
 
             function onButtonClick(event) {
                 var el = this.parentNode;

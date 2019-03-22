@@ -1,0 +1,20 @@
+var parameters = {
+	"mesh" : "Right.mz3",
+	"overlay" : "overlay.mz3",
+	"elevation" : 20,
+	"azimuth" : 90,
+	"backColor": "#FFFFFF",
+	"axesHelper": false,
+	"ambientIntensity": 0.8,
+	"meshColor": "#ffc7d0",
+	"opacity": 1,
+	"aoMapIntensity": 1.0,
+	"roughness": 0.5,
+	"metalness": 0.25,
+	"wireframe": false,
+	"oColor": "#FF0000",
+	"oopacity": 1,
+	"oroughness": 0.5,
+	"ometalness": 0.25,
+	"owireframe": false
+};
